@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Delta Log Aggregator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            bg: '#1a1a1a',
+                            surface: '#242424',
+                            border: '#333333',
+                            hover: '#2a2a2a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .json-key { color: #9cdcfe; }
+        .json-string { color: #ce9178; }
+        .json-number { color: #b5cea8; }
+        .json-boolean { color: #569cd6; }
+        .json-null { color: #569cd6; }
+
+        .tab-active {
+            background-color: #333333;
+            border-bottom: 2px solid #4ade80;
+        }
+
+        textarea:focus, button:focus {
+            outline: none;
+        }
+
+        .scrollbar-dark::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .scrollbar-dark::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        .scrollbar-dark::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+        .scrollbar-dark::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .history-item:hover {
+            background-color: #2a2a2a;
+        }
+    </style>
+</head>
+<body class="bg-dark-bg text-gray-200 min-h-screen">
+    <!-- Header -->
+    <header class="bg-dark-surface border-b border-dark-border px-6 py-4">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <h1 class="text-xl font-semibold text-white">SSE Delta Log Aggregator</h1>
+                <span class="text-sm text-gray-500">delta.content 조각을 하나로 합칩니다</span>
+            </div>
+            <!-- Auth Section -->
+            <div id="auth-section" class="flex items-center gap-3">
+                <!-- Loading state -->
+                <span id="auth-loading" class="text-sm text-gray-500">로딩 중...</span>
+                <!-- Not logged in -->
+                <div id="auth-buttons" class="hidden flex items-center gap-2">
+                    <button
+                        id="btn-google"
+                        onclick="loginWith('google')"
+                        class="hidden px-3 py-1.5 text-sm bg-white text-gray-800 hover:bg-gray-100 rounded flex items-center gap-2 transition-colors"
+                    >
+                        <svg class="w-4 h-4" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        Google
+                    </button>
+                    <button
+                        id="btn-github"
+                        onclick="loginWith('github')"
+                        class="hidden px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-2 transition-colors"
+                    >
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                        GitHub
+                    </button>
+                </div>
+                <!-- Logged in -->
+                <div id="user-info" class="hidden flex items-center gap-3">
+                    <img id="user-avatar" src="" alt="" class="w-8 h-8 rounded-full hidden">
+                    <span id="user-name" class="text-sm text-gray-300"></span>
+                    <button
+                        onclick="logout()"
+                        class="px-3 py-1.5 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                    >
+                        로그아웃
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex h-[calc(100vh-65px)]">
+        <!-- Left Pane: Input -->
+        <div class="w-1/2 border-r border-dark-border flex flex-col">
+            <div class="bg-dark-surface px-4 py-3 border-b border-dark-border flex items-center justify-between">
+                <span class="text-sm font-medium text-gray-400">Input (SSE Logs)</span>
+                <div class="flex gap-2">
+                    <button
+                        onclick="clearInput()"
+                        class="px-3 py-1.5 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                    >
+                        Clear
+                    </button>
+                    <button
+                        onclick="loadSample()"
+                        class="px-3 py-1.5 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                    >
+                        Sample
+                    </button>
+                </div>
+            </div>
+            <textarea
+                id="inputArea"
+                class="flex-1 bg-dark-bg p-4 resize-none font-mono text-sm text-gray-300 scrollbar-dark focus:ring-0 border-0"
+                placeholder="SSE delta 로그를 여기에 붙여넣으세요...
+
+[Auto] 자동으로 포맷 감지
+[OpenAI] choices[0].delta.content
+[Anthropic] content_block_delta
+[Gemini] candidates[].content.parts[]
+[Playground] op: add/append
+[MAS Response] content[].text (multi-agent)"
+            ></textarea>
+            <div class="bg-dark-surface px-4 py-3 border-t border-dark-border space-y-3">
+                <!-- Format Selector -->
+                <div class="flex items-center gap-4 flex-wrap">
+                    <span class="text-xs text-gray-500">Format:</span>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="format"
+                            value="auto"
+                            checked
+                            class="w-3.5 h-3.5 text-green-600 bg-dark-bg border-dark-border focus:ring-0 focus:ring-offset-0"
+                        >
+                        <span class="text-sm text-gray-300">Auto</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="format"
+                            value="orchestrator"
+                            class="w-3.5 h-3.5 text-green-600 bg-dark-bg border-dark-border focus:ring-0 focus:ring-offset-0"
+                        >
+                        <span class="text-sm text-gray-300">OpenAI</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="format"
+                            value="anthropic"
+                            class="w-3.5 h-3.5 text-green-600 bg-dark-bg border-dark-border focus:ring-0 focus:ring-offset-0"
+                        >
+                        <span class="text-sm text-gray-300">Anthropic</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="format"
+                            value="gemini"
+                            class="w-3.5 h-3.5 text-green-600 bg-dark-bg border-dark-border focus:ring-0 focus:ring-offset-0"
+                        >
+                        <span class="text-sm text-gray-300">Gemini</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="format"
+                            value="playground"
+                            class="w-3.5 h-3.5 text-green-600 bg-dark-bg border-dark-border focus:ring-0 focus:ring-offset-0"
+                        >
+                        <span class="text-sm text-gray-300">Playground</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                            type="radio"
+                            name="format"
+                            value="mas_response"
+                            class="w-3.5 h-3.5 text-green-600 bg-dark-bg border-dark-border focus:ring-0 focus:ring-offset-0"
+                        >
+                        <span class="text-sm text-gray-300">MAS</span>
+                    </label>
+                </div>
+                <!-- Detected Format Info -->
+                <div id="detected-format" class="hidden text-xs text-green-400">
+                    감지된 포맷: <span id="detected-format-name"></span>
+                </div>
+                <button
+                    onclick="parseInput()"
+                    class="w-full py-2.5 bg-green-600 hover:bg-green-700 rounded font-medium text-white transition-colors"
+                >
+                    Parse
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Pane: Output -->
+        <div class="w-1/2 flex flex-col">
+            <!-- Tabs -->
+            <div class="bg-dark-surface border-b border-dark-border flex">
+                <button
+                    id="tab-raw"
+                    onclick="switchTab('raw')"
+                    class="px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors tab-active"
+                >
+                    Raw Result
+                </button>
+                <button
+                    id="tab-json"
+                    onclick="switchTab('json')"
+                    class="px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                >
+                    Structured JSON
+                </button>
+                <button
+                    id="tab-usage"
+                    onclick="switchTab('usage')"
+                    class="px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                >
+                    Usage
+                </button>
+                <button
+                    id="tab-metadata"
+                    onclick="switchTab('metadata')"
+                    class="px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                >
+                    Metadata
+                </button>
+                <button
+                    id="tab-history"
+                    onclick="switchTab('history')"
+                    class="px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors hidden"
+                >
+                    History
+                </button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="flex-1 overflow-hidden relative">
+                <!-- Raw Result Tab -->
+                <div id="content-raw" class="absolute inset-0 flex flex-col">
+                    <div class="bg-dark-surface px-4 py-2 border-b border-dark-border flex items-center justify-between">
+                        <span id="chunk-count" class="text-xs text-gray-500">0 chunks parsed</span>
+                        <button
+                            onclick="copyContent('raw')"
+                            class="px-3 py-1 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <pre id="raw-output" class="flex-1 p-4 overflow-auto font-mono text-sm text-gray-300 scrollbar-dark whitespace-pre-wrap break-words"></pre>
+                </div>
+
+                <!-- JSON Tab -->
+                <div id="content-json" class="absolute inset-0 flex flex-col hidden">
+                    <div class="bg-dark-surface px-4 py-2 border-b border-dark-border flex items-center justify-between">
+                        <span class="text-xs text-gray-500">Extracted JSON from content</span>
+                        <button
+                            onclick="copyContent('json')"
+                            class="px-3 py-1 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <pre id="json-output" class="flex-1 p-4 overflow-auto font-mono text-sm scrollbar-dark"></pre>
+                </div>
+
+                <!-- Usage Tab -->
+                <div id="content-usage" class="absolute inset-0 flex flex-col hidden">
+                    <div class="bg-dark-surface px-4 py-2 border-b border-dark-border flex items-center justify-between">
+                        <span class="text-xs text-gray-500">Usage info from logs</span>
+                        <button
+                            onclick="copyContent('usage')"
+                            class="px-3 py-1 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <pre id="usage-output" class="flex-1 p-4 overflow-auto font-mono text-sm scrollbar-dark"></pre>
+                </div>
+
+                <!-- Metadata Tab -->
+                <div id="content-metadata" class="absolute inset-0 flex flex-col hidden">
+                    <div class="bg-dark-surface px-4 py-2 border-b border-dark-border flex items-center justify-between">
+                        <span class="text-xs text-gray-500">id, model, created 등 메타데이터</span>
+                        <button
+                            onclick="copyContent('metadata')"
+                            class="px-3 py-1 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <pre id="metadata-output" class="flex-1 p-4 overflow-auto font-mono text-sm scrollbar-dark"></pre>
+                </div>
+
+                <!-- History Tab -->
+                <div id="content-history" class="absolute inset-0 flex flex-col hidden">
+                    <div class="bg-dark-surface px-4 py-2 border-b border-dark-border flex items-center justify-between">
+                        <span class="text-xs text-gray-500">변환 히스토리 (클릭하여 복원)</span>
+                        <button
+                            onclick="loadHistory()"
+                            class="px-3 py-1 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors"
+                        >
+                            새로고침
+                        </button>
+                    </div>
+                    <div id="history-list" class="flex-1 overflow-auto scrollbar-dark">
+                        <div id="history-empty" class="p-4 text-sm text-gray-500 text-center">
+                            히스토리가 없습니다
+                        </div>
+                        <div id="history-items" class="hidden"></div>
+                    </div>
+                    <div id="history-pagination" class="hidden bg-dark-surface px-4 py-2 border-t border-dark-border flex items-center justify-between">
+                        <button
+                            id="history-prev"
+                            onclick="loadHistory(currentHistoryPage - 1)"
+                            class="px-3 py-1 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors disabled:opacity-50"
+                            disabled
+                        >
+                            이전
+                        </button>
+                        <span id="history-page-info" class="text-xs text-gray-500"></span>
+                        <button
+                            id="history-next"
+                            onclick="loadHistory(currentHistoryPage + 1)"
+                            class="px-3 py-1 text-xs bg-dark-border hover:bg-dark-hover rounded text-gray-300 transition-colors disabled:opacity-50"
+                            disabled
+                        >
+                            다음
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Errors -->
+            <div id="error-section" class="bg-red-900/20 border-t border-red-800 px-4 py-2 hidden">
+                <span class="text-xs text-red-400" id="error-text"></span>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentTab = 'raw';
+        let lastResult = null;
+        let currentUser = null;
+        let currentHistoryPage = 1;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuthStatus();
+        });
+
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/auth/status');
+                const data = await response.json();
+
+                document.getElementById('auth-loading').classList.add('hidden');
+
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                    showUserInfo(data.user);
+                    document.getElementById('tab-history').classList.remove('hidden');
+                } else {
+                    showLoginButtons(data.providers);
+                }
+            } catch (err) {
+                document.getElementById('auth-loading').classList.add('hidden');
+                showLoginButtons({google: false, github: false});
+            }
+        }
+
+        function showLoginButtons(providers) {
+            document.getElementById('auth-buttons').classList.remove('hidden');
+            if (providers.google) {
+                document.getElementById('btn-google').classList.remove('hidden');
+            }
+            if (providers.github) {
+                document.getElementById('btn-github').classList.remove('hidden');
+            }
+        }
+
+        function showUserInfo(user) {
+            document.getElementById('user-info').classList.remove('hidden');
+            document.getElementById('user-name').textContent = user.name || user.email;
+            if (user.picture) {
+                const avatar = document.getElementById('user-avatar');
+                avatar.src = user.picture;
+                avatar.classList.remove('hidden');
+            }
+        }
+
+        function loginWith(provider) {
+            window.location.href = `/auth/${provider}`;
+        }
+
+        async function logout() {
+            try {
+                await fetch('/auth/logout', { method: 'POST' });
+                window.location.reload();
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
+        }
+
+        function switchTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                el.classList.remove('tab-active');
+            });
+            document.getElementById(`tab-${tab}`).classList.add('tab-active');
+
+            // Update content visibility
+            document.querySelectorAll('[id^="content-"]').forEach(el => {
+                el.classList.add('hidden');
+            });
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+
+            currentTab = tab;
+
+            // Load history when switching to history tab
+            if (tab === 'history' && currentUser) {
+                loadHistory();
+            }
+        }
+
+        async function parseInput() {
+            const input = document.getElementById('inputArea').value;
+            const formatType = document.querySelector('input[name="format"]:checked').value;
+
+            if (!input.trim()) {
+                showError('입력 데이터가 없습니다');
+                return;
+            }
+
+            try {
+                const response = await fetch('/parse', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ raw_logs: input, format_type: formatType })
+                });
+
+                if (!response.ok) {
+                    throw new Error('서버 오류');
+                }
+
+                const result = await response.json();
+                lastResult = result;
+                displayResult(result);
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        function displayResult(result) {
+            // Hide errors
+            document.getElementById('error-section').classList.add('hidden');
+
+            // Update chunk count
+            let chunkInfo = `${result.chunk_count} chunks parsed`;
+            document.getElementById('chunk-count').textContent = chunkInfo;
+
+            // Show detected format if auto-detect was used
+            const detectedEl = document.getElementById('detected-format');
+            if (result.detected_format) {
+                const formatNames = {
+                    'orchestrator': 'OpenAI/Orchestrator',
+                    'anthropic': 'Anthropic Claude',
+                    'gemini': 'Google Gemini',
+                    'playground': 'Playground',
+                    'mas_response': 'MAS Response'
+                };
+                document.getElementById('detected-format-name').textContent = formatNames[result.detected_format] || result.detected_format;
+                detectedEl.classList.remove('hidden');
+            } else {
+                detectedEl.classList.add('hidden');
+            }
+
+            // Raw output
+            document.getElementById('raw-output').textContent = result.raw_text || '(빈 결과)';
+
+            // JSON output
+            if (result.json_data) {
+                document.getElementById('json-output').innerHTML = syntaxHighlight(result.json_formatted);
+            } else {
+                document.getElementById('json-output').innerHTML = '<span class="text-gray-500">콘텐츠에서 JSON을 찾을 수 없습니다</span>';
+            }
+
+            // Usage output
+            if (result.usage) {
+                document.getElementById('usage-output').innerHTML = syntaxHighlight(result.usage_formatted);
+            } else {
+                document.getElementById('usage-output').innerHTML = '<span class="text-gray-500">로그에 usage 정보가 없습니다</span>';
+            }
+
+            // Metadata output
+            if (result.metadata) {
+                document.getElementById('metadata-output').innerHTML = syntaxHighlight(result.metadata_formatted);
+            } else {
+                document.getElementById('metadata-output').innerHTML = '<span class="text-gray-500">로그에 메타데이터가 없습니다</span>';
+            }
+
+            // Show errors if any
+            if (result.errors && result.errors.length > 0) {
+                showError(result.errors.join(', '));
+            }
+        }
+
+        async function loadHistory(page = 1) {
+            if (!currentUser) return;
+
+            currentHistoryPage = page;
+
+            try {
+                const response = await fetch(`/history?page=${page}&page_size=20`);
+                if (!response.ok) throw new Error('Failed to load history');
+
+                const data = await response.json();
+
+                const emptyEl = document.getElementById('history-empty');
+                const itemsEl = document.getElementById('history-items');
+                const paginationEl = document.getElementById('history-pagination');
+
+                if (data.items.length === 0) {
+                    emptyEl.classList.remove('hidden');
+                    itemsEl.classList.add('hidden');
+                    paginationEl.classList.add('hidden');
+                } else {
+                    emptyEl.classList.add('hidden');
+                    itemsEl.classList.remove('hidden');
+
+                    itemsEl.innerHTML = data.items.map(item => `
+                        <div class="history-item p-3 border-b border-dark-border cursor-pointer flex items-center justify-between"
+                             onclick="restoreHistory('${item.id}')">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-xs px-2 py-0.5 bg-dark-border rounded text-gray-400">${item.format_type}</span>
+                                    <span class="text-xs text-gray-500">${item.chunk_count} chunks</span>
+                                </div>
+                                <div class="text-sm text-gray-300 truncate">${escapeHtml(item.preview || '(빈 결과)')}</div>
+                                <div class="text-xs text-gray-500 mt-1">${formatDate(item.created_at)}</div>
+                            </div>
+                            <button
+                                onclick="event.stopPropagation(); deleteHistory('${item.id}')"
+                                class="ml-2 p-1 text-gray-500 hover:text-red-400 transition-colors"
+                                title="삭제"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
+                        </div>
+                    `).join('');
+
+                    // Pagination
+                    if (data.total_pages > 1) {
+                        paginationEl.classList.remove('hidden');
+                        document.getElementById('history-page-info').textContent = `${page} / ${data.total_pages}`;
+                        document.getElementById('history-prev').disabled = page <= 1;
+                        document.getElementById('history-next').disabled = page >= data.total_pages;
+                    } else {
+                        paginationEl.classList.add('hidden');
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load history:', err);
+            }
+        }
+
+        async function restoreHistory(id) {
+            try {
+                const response = await fetch(`/history/${id}`);
+                if (!response.ok) throw new Error('Failed to load history');
+
+                const data = await response.json();
+
+                // Restore input
+                document.getElementById('inputArea').value = data.input_logs;
+
+                // Set format type
+                const formatRadio = document.querySelector(`input[name="format"][value="${data.format_type}"]`);
+                if (formatRadio) {
+                    formatRadio.checked = true;
+                } else {
+                    // Fall back to auto if format not found
+                    document.querySelector('input[name="format"][value="auto"]').checked = true;
+                }
+
+                // Display result
+                lastResult = {
+                    raw_text: data.raw_text,
+                    json_data: data.json_data,
+                    json_formatted: data.json_data ? JSON.stringify(data.json_data, null, 2) : null,
+                    usage: data.usage_data,
+                    usage_formatted: data.usage_data ? JSON.stringify(data.usage_data, null, 2) : null,
+                    metadata: data.metadata_info,
+                    metadata_formatted: data.metadata_info ? JSON.stringify(data.metadata_info, null, 2) : null,
+                    chunk_count: data.chunk_count,
+                    errors: []
+                };
+                displayResult(lastResult);
+
+                // Switch to raw tab
+                switchTab('raw');
+            } catch (err) {
+                showError('히스토리를 불러오는데 실패했습니다');
+            }
+        }
+
+        async function deleteHistory(id) {
+            if (!confirm('이 히스토리를 삭제하시겠습니까?')) return;
+
+            try {
+                const response = await fetch(`/history/${id}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Failed to delete history');
+
+                loadHistory(currentHistoryPage);
+            } catch (err) {
+                showError('삭제에 실패했습니다');
+            }
+        }
+
+        function formatDate(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleString('ko-KR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function syntaxHighlight(json) {
+            if (!json) return '';
+            return json
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+                    function (match) {
+                        let cls = 'json-number';
+                        if (/^"/.test(match)) {
+                            if (/:$/.test(match)) {
+                                cls = 'json-key';
+                            } else {
+                                cls = 'json-string';
+                            }
+                        } else if (/true|false/.test(match)) {
+                            cls = 'json-boolean';
+                        } else if (/null/.test(match)) {
+                            cls = 'json-null';
+                        }
+                        return '<span class="' + cls + '">' + match + '</span>';
+                    });
+        }
+
+        function showError(message) {
+            const errorSection = document.getElementById('error-section');
+            document.getElementById('error-text').textContent = message;
+            errorSection.classList.remove('hidden');
+        }
+
+        function copyContent(type) {
+            let text = '';
+            if (type === 'raw') {
+                text = lastResult?.raw_text || '';
+            } else if (type === 'json') {
+                text = lastResult?.json_formatted || '';
+            } else if (type === 'usage') {
+                text = lastResult?.usage_formatted || '';
+            } else if (type === 'metadata') {
+                text = lastResult?.metadata_formatted || '';
+            }
+
+            if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    // Brief visual feedback could be added here
+                });
+            }
+        }
+
+        function clearInput() {
+            document.getElementById('inputArea').value = '';
+            document.getElementById('raw-output').textContent = '';
+            document.getElementById('json-output').innerHTML = '';
+            document.getElementById('usage-output').innerHTML = '';
+            document.getElementById('metadata-output').innerHTML = '';
+            document.getElementById('chunk-count').textContent = '0 chunks parsed';
+            document.getElementById('error-section').classList.add('hidden');
+            lastResult = null;
+        }
+
+        function loadSample() {
+            const formatType = document.querySelector('input[name="format"]:checked').value;
+
+            const samples = {
+                auto: `event: message_start
+data: {"type":"message_start","message":{"id":"msg_01ABC","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","usage":{"input_tokens":25}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"안녕"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"하세요"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"!"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8}}
+
+event: message_stop
+data: {"type":"message_stop"}`,
+
+                orchestrator: `data: reserved
+
+data: start
+
+event: delta
+data: {"id":"chatcmpl-abc123","choices":[{"delta":{"content":"{"}}],"created":1704067200,"model":"gpt-4o","object":"chat.completion.chunk"}
+
+event: delta
+data: {"id":"chatcmpl-abc123","choices":[{"delta":{"content":"\\"name"}}],"created":1704067200,"model":"gpt-4o","object":"chat.completion.chunk"}
+
+event: delta
+data: {"id":"chatcmpl-abc123","choices":[{"delta":{"content":"\\": \\"John"}}],"created":1704067200,"model":"gpt-4o","object":"chat.completion.chunk"}
+
+event: delta
+data: {"id":"chatcmpl-abc123","choices":[{"delta":{"content":" Doe\\","}}],"created":1704067200,"model":"gpt-4o","object":"chat.completion.chunk"}
+
+event: delta
+data: {"id":"chatcmpl-abc123","choices":[{"delta":{"content":" \\"age\\": 30"}}],"created":1704067200,"model":"gpt-4o","object":"chat.completion.chunk"}
+
+event: delta
+data: {"id":"chatcmpl-abc123","choices":[{"delta":{"content":"}"}}],"created":1704067200,"model":"gpt-4o","object":"chat.completion.chunk"}
+
+event: delta
+data: {"id":"chatcmpl-abc123","choices":[],"created":1704067200,"model":"gpt-4o","object":"chat.completion.chunk","usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}
+
+data: end`,
+
+                anthropic: `event: message_start
+data: {"type":"message_start","message":{"id":"msg_01XYZ","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","usage":{"input_tokens":25}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"{"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\\"message\\""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":": \\"Hello"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":", World!\\""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":15}}
+
+event: message_stop
+data: {"type":"message_stop"}`,
+
+                gemini: `data: {"candidates":[{"content":{"parts":[{"text":"안"}],"role":"model"}}],"modelVersion":"gemini-2.0-flash"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"안녕"}],"role":"model"}}],"modelVersion":"gemini-2.0-flash"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"안녕하세요"}],"role":"model"}}],"modelVersion":"gemini-2.0-flash"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"안녕하세요!"}],"role":"model"}}],"modelVersion":"gemini-2.0-flash"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"안녕하세요! 오늘"}],"role":"model"}}],"modelVersion":"gemini-2.0-flash"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"안녕하세요! 오늘 무엇을"}],"role":"model"}}],"modelVersion":"gemini-2.0-flash"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"안녕하세요! 오늘 무엇을 도와드릴까요?"}],"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":12,"totalTokenCount":22},"modelVersion":"gemini-2.0-flash"}`,
+
+                playground: `data:reserved
+
+data:start
+
+event:delta
+data:{"op": "add", "path": "/message/contents/answers/0", "value": {"type": "answer", "content": "안"}}
+
+event:delta
+data:{"op": "append", "path": "/message/contents/answers/0/content", "value": "녕하세요"}
+
+event:delta
+data:{"op": "append", "path": "/message/contents/answers/0/content", "value": ", 홍길동님!"}
+
+event:delta
+data:{"op": "append", "path": "/message/contents/answers/0/content", "value": " 오늘 하루도 화이팅하세요."}
+
+event:delta
+data:{"op": "patch", "path": "", "value": []}
+
+data:end`,
+
+                mas_response: `event:connected
+data:{"status":"connected","streamId":"47f37fd3-e0aa-428c-b29f-7443e5cec3a3"}
+
+data:reserved
+
+data:start
+
+event:delta
+data:{"workflow_id": "wf-233f1db0145cb14a", "node_id": "agent-1", "step": 1, "timestamp": "2026-01-16T06:59:24.000000+00:00", "event_type": "stream", "content": [{"type": "text", "text": "[Agent 1] ", "index": 0}]}
+
+event:delta
+data:{"workflow_id": "wf-233f1db0145cb14a", "node_id": "agent-1", "step": 1, "timestamp": "2026-01-16T06:59:24.100000+00:00", "event_type": "stream", "content": [{"type": "text", "text": "분석 완료. ", "index": 0}]}
+
+event:delta
+data:{"workflow_id": "wf-233f1db0145cb14a", "node_id": "agent-2", "step": 2, "timestamp": "2026-01-16T06:59:24.200000+00:00", "event_type": "stream", "content": [{"type": "text", "text": "[Agent 2] ", "index": 0}]}
+
+event:delta
+data:{"workflow_id": "wf-233f1db0145cb14a", "node_id": "agent-2", "step": 2, "timestamp": "2026-01-16T06:59:24.300000+00:00", "event_type": "stream", "content": [{"type": "text", "text": "결과를 종합합니다.", "index": 0}]}
+
+event:delta
+data:{"workflow_id": "wf-233f1db0145cb14a", "event_type": "workflow_complete", "step": 2, "timestamp": "2026-01-16T06:59:25.000000+00:00"}
+
+data:end
+
+data:[DONE]`
+            };
+
+            document.getElementById('inputArea').value = samples[formatType] || samples.orchestrator;
+        }
+
+        // Parse on Ctrl+Enter
+        document.getElementById('inputArea').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                parseInput();
+            }
+        });
+    </script>
+</body>
+</html>
