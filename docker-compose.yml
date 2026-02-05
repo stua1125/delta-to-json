@@ -18,6 +18,8 @@ services:
 
   db:
     image: postgres:16-alpine
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: sse_parser
       POSTGRES_USER: postgres
